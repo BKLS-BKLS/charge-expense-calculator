@@ -22,7 +22,11 @@ const entities = {
     css: 0.00,
     as: 0.00,
     duty: 0,
+    commercialTariff: 10,
+    industrialTariff: 8.45,
     banking: 10,
+    totalConsumption: 198.97, // GWh
+    ciConsumption: 101.29,    // GWh
     transmissionCharge: 0.67,
     transmissionLoss: 4.27
   },
@@ -36,6 +40,8 @@ const entities = {
     css: 0,
     as: 0,
     duty: 0,
+    commercialTariff: 8.3,
+    industrialTariff: 6.9,
     banking: 6,  
     transmissionCharge: 0.25,
     transmissionLoss: 0
@@ -50,8 +56,12 @@ const entities = {
     css: 0,
     as: 0,
     duty: 0,
+    commercialTariff: 9.26,
+    industrialTariff: 7.48,
     banking: 2,
-    transmissionCharge: 0,
+    totalConsumption: 198.97, // GWh
+    ciConsumption: 101.29,    // GWh
+    transmissionCharge: 0.4,
     transmissionLoss: 3.8
   },
   "Chhattisgarh": {
@@ -64,7 +74,11 @@ const entities = {
     css: 0,
     as: 0,
     duty: 0,
+    commercialTariff: 8,
+    industrialTariff: 7.0,
     banking: 2,
+    totalConsumption: 198.97, // GWh
+    ciConsumption: 101.29,    // GWh
     transmissionCharge: 0.3255,
     transmissionLoss: 3
   },
@@ -78,16 +92,21 @@ const entities = {
     css: 0,
     as: 0,
     duty: 0,
+    commercialTariff: 8.0,
+    industrialTariff: 6.9,
     banking: 8,
+    totalConsumption: 198.97, // GWh
+    ciConsumption: 101.29,    // GWh
     transmissionCharge: 0,
     transmissionLoss: 2.764
   }
 };
 
 export default function ChargeExpenseCalculator() {
-  const [source, setSource] = useState("Rajasthan");
+  const [source, setSource] = useState("Maharashtra");
   const [voltageLevel, setVoltageLevel] = useState("11");
-  const [destination, setDestination] = useState("Rajasthan");
+  const [customerType, setCustomerType] = useState("commercial");
+  const [destination, setDestination] = useState("Maharashtra");
   const [capacityMW, setCapacityMW] = useState(10); // 10 MW
   const capacity = capacityMW * 1000; // kWh internally
   const [bankedPercent, setBankedPercent] = useState(0);
@@ -103,9 +122,19 @@ export default function ChargeExpenseCalculator() {
       ? data.wheeling33kV
       : data.wheeling132kV
 }));
-
   const destinationData = entities[destination];
+  const selectedStateConsumptionData = [
+  { category: "Total Consumption", value: destinationData.totalConsumption || 0 },
+  { category: "C&I Consumption", value: destinationData.ciConsumption || 0 }
+];
 
+  const applicableStateTariff = customerType === "commercial"
+  ? destinationData.commercialTariff
+  : destinationData.industrialTariff;
+
+   
+
+    
   const totalBankedEnergy = (capacity * bankedPercent) / 100;
   const bankingLossRate = destinationData.banking;
   const lostEnergyToState = (totalBankedEnergy * bankingLossRate) / 100;
@@ -142,13 +171,26 @@ export default function ChargeExpenseCalculator() {
     bankingLossCostPerUnit +
     transmissionLossCostPerUnit +   
     transmissionChargePerUnit +
-    wheelingLossCostPerUnit; 
+    wheelingLossCostPerUnit;
+
+  const savingsPerUnit = applicableStateTariff - landedCost; 
     
   return (
     <div className="p-6 space-y-6 max-w-3xl mx-auto">
       <h1 className="text-3xl font-bold">Charge Expense Calculator</h1>
 
       <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block mb-1">Customer Type</label>
+          <select
+            value={customerType}
+            onChange={(e) => setCustomerType(e.target.value)}
+            className="border p-2 w-full rounded-md"
+          >
+            <option value="commercial">Commercial</option>
+            <option value="industrial">Industrial</option>
+          </select>
+        </div>
         <div>
           <label className="block mb-1">Select Source Entity</label>
           <select
@@ -189,7 +231,7 @@ export default function ChargeExpenseCalculator() {
         </div>
 
         <div>
-          <label className="block mb-1\">Installed Capacity at Source (MW)</label>
+          <label className="block mb-1">Installed Capacity at Source (MW)</label>
           <input
             type="number"
             value={capacityMW}
@@ -238,9 +280,18 @@ export default function ChargeExpenseCalculator() {
           <li>Transmission Loss Cost: ₹{transmissionLossCostPerUnit.toFixed(4)} / kWh</li>
           
         </ul>
+        <p className="text-lg font-bold text-yellow-700">
+          {customerType.charAt(0).toUpperCase() + customerType.slice(1)} Tariff for {destination}: ₹{applicableStateTariff.toFixed(2)} / kWh
+        </p>
+
         <p className="text-lg font-bold text-green-700">
           Landed Cost: ₹{landedCost.toFixed(4)} / kWh 
         </p>
+
+        <p className="text-lg font-bold text-blue-700">
+          Savings vs {customerType.charAt(0).toUpperCase() + customerType.slice(1)} Tariff: ₹{savingsPerUnit.toFixed(4)} / kWh
+        </p>
+
       </div>
 
       <div className="bg-gray-100 p-4 rounded-xl space-y-2 border">
@@ -252,18 +303,33 @@ export default function ChargeExpenseCalculator() {
         <p>⚡ Total Net Delivered Energy: <strong>{totalEnergyDelivered.toFixed(2)} kWh</strong></p>
       </div>
       <div className="bg-white shadow-md rounded-xl p-6 space-y-4">
-       <h2 className="text-xl font-semibold">📊 Wheeling Charges Across States ({voltageLevel} kV)</h2>
-        <ResponsiveContainer width="100%" height={300}>
-         <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-         <CartesianGrid strokeDasharray="3 3" />
-         <XAxis dataKey="state" />
-         <YAxis label={{ value: "₹/kWh", angle: -90, position: "insideLeft" }} />
-         <Tooltip />
-         <Legend />
-         <Bar dataKey="wheeling" fill="#38bdf8" name="Wheeling Charge" />
-        </BarChart>
-       </ResponsiveContainer>
+  <h2 className="text-xl font-semibold">📊 Wheeling Charges Across States ({voltageLevel} kV)</h2>
+  <ResponsiveContainer width="100%" height={300}>
+    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+      <CartesianGrid strokeDasharray="3 3" />
+      <XAxis dataKey="state" />
+      <YAxis label={{ value: "₹/kWh", angle: -90, position: "insideLeft" }} />
+      <Tooltip />
+      <Legend />
+      <Bar dataKey="wheeling" fill="#38bdf8" name="Wheeling Charge" />
+    </BarChart>
+  </ResponsiveContainer>
+</div>
+
+<div className="bg-white shadow-md rounded-xl p-6 space-y-4">
+         <h2 className="text-xl font-semibold">📊 {destination} Electricity Consumption (2024-2025)</h2>
+          <ResponsiveContainer width="100%" height={300}>
+           <BarChart data={selectedStateConsumptionData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+           <CartesianGrid strokeDasharray="3 3" />
+           <XAxis dataKey="category" />
+           <YAxis label={{ value: "GWh", angle: -90, position: "insideLeft" }} />
+           <Tooltip />
+           <Legend />
+           <Bar dataKey="value" fill="#4ade80" name="Consumption (GWh)" />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
+
   );
 }
